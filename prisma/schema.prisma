@@ -1,0 +1,145 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Enums para padronizar status e formatos
+enum Role {
+  ADMIN
+  ORGANIZER
+  USER
+}
+
+enum EventFormat {
+  IN_PERSON
+  ONLINE
+  HYBRID
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  FINISHED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+// ---------------------------------------------------------
+// MODELOS DE DADOS
+// ---------------------------------------------------------
+
+model User {
+  id            String   @id @default(uuid())
+  name          String
+  email         String   @unique
+  passwordHash  String?  // Opcional, pensando em suportar OAuth ou Magic Links no futuro
+  role          Role     @default(USER)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relacionamentos: Um usuário pode organizar vários eventos e fazer várias compras
+  events        Event[]  @relation("OrganizerEvents")
+  orders        Order[]  @relation("BuyerOrders")
+
+  @@map("users") // Mapeia para snake_case no banco de dados
+}
+
+model Event {
+  id              String      @id @default(uuid())
+  organizerId     String      @map("organizer_id")
+  title           String
+  slug            String      @unique
+  description     String?     @db.Text
+  coverImageUrl   String?     @map("cover_image_url")
+  startDate       DateTime    @map("start_date")
+  endDate         DateTime    @map("end_date")
+  format          EventFormat
+  locationDetails Json?       @map("location_details") // Pode armazenar endereço ou link do Meet/Zoom
+  status          EventStatus @default(DRAFT)
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  organizer       User         @relation("OrganizerEvents", fields: [organizerId], references: [id])
+  ticketTiers     TicketTier[]
+  orders          Order[]
+
+  @@map("events")
+}
+
+model TicketTier {
+  id             String    @id @default(uuid())
+  eventId        String    @map("event_id")
+  name           String    // Ex: "1º Lote - Pista"
+  description    String?
+  priceCents     Int       @map("price_cents") // Valores financeiros SEMPRE em centavos (ex: 5000 = R$ 50,00)
+  capacity       Int       // Quantidade de ingressos disponíveis neste lote
+  startSalesAt   DateTime  @map("start_sales_at")
+  endSalesAt     DateTime  @map("end_sales_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  event          Event     @relation(fields: [eventId], references: [id])
+  tickets        Ticket[]
+
+  @@map("ticket_tiers")
+}
+
+model Order {
+  id                String      @id @default(uuid())
+  buyerId           String      @map("buyer_id")
+  eventId           String      @map("event_id")
+  totalAmountCents  Int         @map("total_amount_cents")
+  status            OrderStatus @default(PENDING)
+  paymentProviderId String?     @map("payment_provider_id") // ID da transação no Stripe/Mercado Pago
+  paymentMethod     String?     @map("payment_method")      // 'PIX', 'CREDIT_CARD'
+  expiresAt         DateTime?   @map("expires_at")          // Data de expiração da reserva de carrinho
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  buyer             User        @relation("BuyerOrders", fields: [buyerId], references: [id])
+  event             Event       @relation(fields: [eventId], references: [id])
+  tickets           Ticket[]
+
+  @@map("orders")
+}
+
+model Ticket {
+  id               String    @id @default(uuid())
+  orderId          String    @map("order_id")
+  ticketTierId     String    @map("ticket_tier_id")
+  attendeeName     String    @map("attendee_name")
+  attendeeEmail    String    @map("attendee_email")
+  attendeeDocument String?   @map("attendee_document") // CPF para segurança
+  qrCodeToken      String    @unique @map("qr_code_token") // Hash único validado na porta do evento
+  checkInStatus    Boolean   @default(false) @map("check_in_status")
+  checkInTime      DateTime? @map("check_in_time")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  // Relacionamentos
+  order            Order      @relation(fields: [orderId], references: [id])
+  ticketTier       TicketTier @relation(fields: [ticketTierId], references: [id])
+
+  // Índices para otimizar buscas no dia do evento (quando o organizador "bipar" o QR code)
+  @@index([qrCodeToken])
+  @@index([orderId])
+  @@map("tickets")
+}
