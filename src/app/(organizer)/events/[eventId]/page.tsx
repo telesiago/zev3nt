@@ -104,8 +104,7 @@ export default async function EventOverviewPage({
               </h3>
               <p className="text-sm text-muted-foreground mt-1">
                 Já tens lotes configurados. O teu evento tem uma capacidade
-                total de <strong>{totalCapacity} lugares</strong>. O próximo
-                passo (no Sprint 4) será publicar a página do evento!
+                total de <strong>{totalCapacity} lugares</strong>.
               </p>
             </div>
           </CardContent>

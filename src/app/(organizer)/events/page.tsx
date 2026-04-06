@@ -21,10 +21,10 @@ export default async function EventsPage() {
   const session = await auth();
 
   if (!session?.user?.id) {
-    return null; // O Middleware já faz este trabalho, mas garantimos a segurança aqui também
+    return null;
   }
 
-  // 2. Buscar apenas os eventos deste organizador (ordenados do mais recente para o mais antigo)
+  // 2. Buscar apenas os eventos deste organizador
   const events = await prisma.event.findMany({
     where: {
       organizerId: session.user.id,
@@ -68,12 +68,27 @@ export default async function EventsPage() {
       ) : (
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {events.map((event) => (
-            <Card key={event.id} className="flex flex-col overflow-hidden">
-              <div className="h-32 bg-muted relative flex items-center justify-center">
-                {/* Futuramente colocaremos a cover_image_url aqui */}
-                <span className="text-muted-foreground text-sm">Sem capa</span>
+            <Card
+              key={event.id}
+              className="group flex flex-col overflow-hidden hover:border-primary/50 transition-colors"
+            >
+              <div className="h-32 bg-muted relative flex items-center justify-center overflow-hidden">
+                {/* Agora a imagem tem a classe group-hover para fazer o zoom! */}
+                {event.coverImageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={event.coverImageUrl}
+                    alt={event.title}
+                    className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <span className="text-muted-foreground text-sm z-10 transition-transform duration-500 group-hover:scale-110">
+                    Sem capa
+                  </span>
+                )}
+
                 <Badge
-                  className="absolute top-4 right-4"
+                  className="absolute top-4 right-4 z-10 shadow-sm"
                   variant={event.status === "DRAFT" ? "secondary" : "default"}
                 >
                   {event.status === "DRAFT" ? "Rascunho" : "Publicado"}
@@ -100,7 +115,6 @@ export default async function EventsPage() {
                     <MapPin className="h-4 w-4" />
                   )}
                   <span className="line-clamp-1">
-                    {/* O locationDetails é um JSONB, por isso fazemos o cast correto para o formato esperado */}
                     {event.format === "ONLINE"
                       ? "Evento Online"
                       : (event.locationDetails as { address?: string })
@@ -110,7 +124,10 @@ export default async function EventsPage() {
               </CardContent>
               <CardFooter className="bg-muted/50 p-4">
                 <Link href={`/events/${event.id}`} className="w-full">
-                  <Button variant="outline" className="w-full">
+                  <Button
+                    variant="outline"
+                    className="w-full bg-white hover:bg-muted"
+                  >
                     Gerir Evento
                   </Button>
                 </Link>

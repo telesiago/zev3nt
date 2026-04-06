@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { TicketModal } from "./ticket-modal";
+import { TicketActionsMenu } from "./ticket-actions-menu";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -34,7 +35,6 @@ export default async function EventTicketsPage({
             Gere os tipos de entrada para o teu evento.
           </p>
         </div>
-        {/* Aqui usamos o nosso Client Component para abrir o formulário */}
         <TicketModal eventId={eventId} />
       </div>
 
@@ -56,11 +56,15 @@ export default async function EventTicketsPage({
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between">
                   <span>{tier.name}</span>
-                  <span className="text-lg text-primary">
-                    {tier.priceCents === 0
-                      ? "Grátis"
-                      : `R$ ${(tier.priceCents / 100).toFixed(2).replace(".", ",")}`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg text-primary">
+                      {tier.priceCents === 0
+                        ? "Grátis"
+                        : `R$ ${(tier.priceCents / 100).toFixed(2).replace(".", ",")}`}
+                    </span>
+                    {/* Aqui inserimos o nosso novo menu de Editar/Apagar! */}
+                    <TicketActionsMenu eventId={eventId} tier={tier} />
+                  </div>
                 </CardTitle>
                 <CardDescription>
                   Capacidade: {tier.capacity} bilhetes

@@ -2,15 +2,10 @@ import { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  ArrowLeft,
-  LayoutDashboard,
-  Ticket,
-  Users,
-  Settings,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { EventNav } from "./event-nav";
 
 export default async function EventLayout({
   children,
@@ -54,37 +49,8 @@ export default async function EventLayout({
         </div>
       </div>
 
-      {/* Menu de Abas (Sub-navegação) */}
-      <nav className="flex items-center gap-4 border-b pb-2 overflow-x-auto">
-        <Link
-          href={`/events/${eventId}`}
-          className="flex items-center gap-2 text-sm font-medium text-primary border-b-2 border-primary pb-2 px-1"
-        >
-          <LayoutDashboard className="h-4 w-4" />
-          Visão Geral
-        </Link>
-        <Link
-          href={`/events/${eventId}/tickets`}
-          className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-primary pb-2 px-1 transition-colors"
-        >
-          <Ticket className="h-4 w-4" />
-          Lotes e Bilhetes
-        </Link>
-        <Link
-          href={`/events/${eventId}/attendees`}
-          className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-primary pb-2 px-1 transition-colors"
-        >
-          <Users className="h-4 w-4" />
-          Inscritos
-        </Link>
-        <Link
-          href={`/events/${eventId}/settings`}
-          className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-primary pb-2 px-1 transition-colors"
-        >
-          <Settings className="h-4 w-4" />
-          Configurações
-        </Link>
-      </nav>
+      {/* Menu de Abas (Sub-navegação) dinâmico e corrigido */}
+      <EventNav eventId={eventId} />
 
       {/* O conteúdo do separador atual (ex: o page.tsx) será injetado aqui */}
       <div className="py-4">{children}</div>

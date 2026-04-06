@@ -49,3 +49,37 @@ export async function createEvent(values: z.infer<typeof eventSchema>) {
   revalidatePath("/events");
   redirect("/events");
 }
+
+// NOVA FUNÇÃO: Atualizar dados básicos do evento
+export async function updateEvent(
+  eventId: string,
+  values: z.infer<typeof eventSchema>,
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    throw new Error("Acesso negado. Sessão expirada.");
+  }
+
+  const validatedFields = eventSchema.parse(values);
+
+  // Atualizamos na base de dados, garantindo que o evento pertence a este organizador
+  await prisma.event.update({
+    where: { id: eventId, organizerId: session.user.id },
+    data: {
+      title: validatedFields.title,
+      description: validatedFields.description || "",
+      format: validatedFields.format,
+      startDate: validatedFields.startDate,
+      endDate: validatedFields.endDate,
+      // Como o locationDetails é um JSON, gravamos no formato correto
+      locationDetails: validatedFields.location
+        ? { address: validatedFields.location }
+        : {},
+    },
+  });
+
+  // Limpar a cache para refletir as mudanças instantaneamente
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath(`/events/${eventId}/settings`);
+  revalidatePath(`/`);
+}
