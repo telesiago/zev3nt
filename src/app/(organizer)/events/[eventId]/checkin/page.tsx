@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useTransition, useRef, use } from "react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import { validateTicket } from "@/app/actions/checkin-actions";
 import {
@@ -17,9 +17,11 @@ import { AlertCircle, CheckCircle2, QrCode, UserCheck } from "lucide-react";
 export default function CheckinPage({
   params,
 }: {
-  params: { eventId: string };
+  params: Promise<{ eventId: string }>;
 }) {
-  const { eventId } = params;
+  // O SEGREDO DO NEXT.JS 15: Usamos React.use() para desempacotar a Promise no Client Component
+  const { eventId } = use(params);
+
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
   const [manualToken, setManualToken] = useState("");

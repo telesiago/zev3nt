@@ -15,7 +15,25 @@ export default auth((req) => {
 
   // Se for uma rota protegida e NÃO estiver logado, redirecionar para a página de login
   if (isOrganizerRoute && !isLoggedIn) {
-    return Response.redirect(new URL("/api/auth/signin", req.nextUrl));
+    // 1. Extrair o Host e Protocolo REAIS dos headers da requisição
+    const host =
+      req.headers.get("x-forwarded-host") ||
+      req.headers.get("host") ||
+      "localhost:3000";
+    const protocol =
+      req.headers.get("x-forwarded-proto") ||
+      (process.env.NODE_ENV === "development" ? "http" : "https");
+
+    // 2. Montar a URL absoluta de onde o utilizador está neste momento (com o IP real)
+    const currentAbsoluteUrl = `${protocol}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
+
+    // 3. Montar a URL para a página de login também usando o IP real
+    const signInUrl = new URL(`/api/auth/signin`, `${protocol}://${host}`);
+
+    // 4. Passar o callbackUrl apontando de volta para a URL absoluta construída
+    signInUrl.searchParams.set("callbackUrl", currentAbsoluteUrl);
+
+    return Response.redirect(signInUrl);
   }
 });
 

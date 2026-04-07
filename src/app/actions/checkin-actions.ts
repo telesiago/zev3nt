@@ -12,9 +12,19 @@ export async function validateTicket(qrCodeToken: string, eventId: string) {
   }
 
   try {
-    // 2. Procurar o bilhete na base de dados usando o token lido pelo QR Code
-    const ticket = await prisma.ticket.findUnique({
-      where: { qrCodeToken },
+    // Normaliza o token recebido (remove espaços e passa a minúsculas)
+    // Assim, se digitares "EE61AFE0", ele transforma em "ee61afe0"
+    const searchToken = qrCodeToken.trim().toLowerCase();
+
+    // 2. Procurar o bilhete na base de dados
+    // Trocámos o findUnique pelo findFirst e usámos o "startsWith".
+    // Agora o sistema encontra o bilhete tanto pelo QR Code completo quanto pelo ID curto digitado manualmente!
+    const ticket = await prisma.ticket.findFirst({
+      where: {
+        qrCodeToken: {
+          startsWith: searchToken,
+        },
+      },
       include: {
         order: true,
         ticketTier: true,
