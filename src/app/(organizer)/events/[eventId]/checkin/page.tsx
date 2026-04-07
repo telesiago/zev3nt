@@ -1,159 +1,139 @@
 "use client";
 
-import { use, useState, useTransition } from "react";
+import { useState, useTransition, useRef } from "react";
 import { Scanner } from "@yudiel/react-qr-scanner";
 import { validateTicket } from "@/app/actions/checkin-actions";
-import { CheckCircle2, XCircle, Keyboard, QrCode } from "lucide-react";
-
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertCircle, CheckCircle2, QrCode, UserCheck } from "lucide-react";
 
 export default function CheckinPage({
   params,
 }: {
-  params: Promise<{ eventId: string }>;
+  params: { eventId: string };
 }) {
-  // Desempacotamos o eventId usando a nova hook 'use' do React (padrão Next.js 15 para Client Components)
-  const { eventId } = use(params);
-
+  const { eventId } = params;
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [attendeeInfo, setAttendeeInfo] = useState<{
-    name: string;
-    tier: string;
-  } | null>(null);
-
   const [manualToken, setManualToken] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  // Função que processa a validação (usada tanto pela câmara como pelo teclado)
+  // Memória para evitar que o scanner leia o mesmo QR Code repetidamente
+  const lastScannedToken = useRef<string | null>(null);
+  const scanTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Função que processa a validação
   const processCheckIn = (token: string) => {
-    // Evita ler o mesmo QR code múltiplas vezes num segundo
+    // Se o sistema estiver ocupado a validar, ou se já estiver a mostrar uma mensagem, ignora
     if (isPending || status !== "idle") return;
+
+    // Bloqueia a leitura do EXATO mesmo token nos próximos 4 segundos (resolve o bug da câmara rápida)
+    if (lastScannedToken.current === token) return;
+
+    // Regista na memória e limpa após 4 segundos
+    lastScannedToken.current = token;
+    if (scanTimeout.current) clearTimeout(scanTimeout.current);
+    scanTimeout.current = setTimeout(() => {
+      lastScannedToken.current = null;
+    }, 4000);
 
     startTransition(() => {
       validateTicket(token, eventId).then((res) => {
-        if (res.success) {
-          setStatus("success");
-          setMessage(res.message);
-          setAttendeeInfo({ name: res.attendeeName!, tier: res.ticketTier! });
-        } else {
-          setStatus("error");
-          setMessage(res.message);
-          setAttendeeInfo(null);
-        }
+        setStatus(res.success ? "success" : "error");
+        setMessage(res.message);
 
-        // O ecrã volta à câmara automaticamente após 3 segundos
+        // Oculta a mensagem de sucesso ou erro ao fim de 3 segundos
         setTimeout(() => {
           setStatus("idle");
           setMessage("");
-          setAttendeeInfo(null);
+          setManualToken("");
         }, 3000);
       });
     });
   };
 
-  // Acionado quando a câmara deteta um QR Code
-  const handleScan = (text: string) => {
-    if (text) {
-      processCheckIn(text);
-    }
-  };
-
-  // Acionado quando o botão de validação manual é clicado
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (manualToken.trim()) {
       processCheckIn(manualToken.trim());
-      setManualToken("");
     }
   };
 
   return (
-    <div className="max-w-md mx-auto w-full space-y-6 pt-4">
-      <div className="text-center space-y-2 mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">
-          Scanner de Entrada
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Aponta a câmara para o bilhete do participante.
+    <div className="max-w-md mx-auto mt-8 space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Check-in</h1>
+        <p className="text-muted-foreground">
+          Scaneia o QR Code ou digita o código do bilhete.
         </p>
       </div>
 
-      {/* ÁREA DE FEEDBACK VISUAL (Verde = Sucesso, Vermelho = Erro) */}
-      {status === "success" && (
-        <Card className="bg-green-500 border-green-600 text-white animate-in zoom-in-95 duration-300">
-          <CardContent className="flex flex-col items-center justify-center p-8 text-center min-h-[300px]">
-            <CheckCircle2 className="h-20 w-20 mb-4 text-white" />
-            <h2 className="text-2xl font-bold uppercase tracking-wider mb-2">
-              Autorizado
+      <Card className="overflow-hidden relative">
+        {/* Camada de Bloqueio (Quando está a mostrar sucesso ou erro) */}
+        {status !== "idle" && (
+          <div className="absolute inset-0 z-10 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in duration-200">
+            {status === "success" ? (
+              <CheckCircle2 className="h-24 w-24 text-green-500 mb-4" />
+            ) : (
+              <AlertCircle className="h-24 w-24 text-red-500 mb-4" />
+            )}
+            <h2
+              className={`text-2xl font-bold ${status === "success" ? "text-green-600" : "text-red-600"}`}
+            >
+              {status === "success" ? "Validado!" : "Erro"}
             </h2>
-            <p className="text-lg font-medium">{attendeeInfo?.name}</p>
-            <p className="opacity-90">{attendeeInfo?.tier}</p>
-          </CardContent>
-        </Card>
-      )}
+            <p className="text-muted-foreground mt-2 font-medium">{message}</p>
+          </div>
+        )}
 
-      {status === "error" && (
-        <Card className="bg-destructive border-destructive text-white animate-in zoom-in-95 duration-300">
-          <CardContent className="flex flex-col items-center justify-center p-8 text-center min-h-[300px]">
-            <XCircle className="h-20 w-20 mb-4 text-white" />
-            <h2 className="text-2xl font-bold uppercase tracking-wider mb-2">
-              Recusado
-            </h2>
-            <p className="font-medium text-lg">{message}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ÁREA DA CÂMARA (Só aparece quando o estado é 'idle') */}
-      <div className={status !== "idle" ? "hidden" : "block"}>
-        <div className="overflow-hidden rounded-2xl border-4 border-muted relative bg-black aspect-square flex items-center justify-center">
-          {/* O Scanner liga a câmara do telemóvel/computador */}
+        <div className="aspect-square bg-black relative">
           <Scanner
-            onScan={(result) => handleScan(result[0].rawValue)}
-            components={{
-              zoom: false,
-              finder: true,
+            onScan={(result) => {
+              if (result && result.length > 0) {
+                processCheckIn(result[0].rawValue);
+              }
             }}
+            formats={["qr_code"]}
           />
-          {isPending && (
-            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
-              <span className="text-white font-medium animate-pulse">
-                A validar...
-              </span>
-            </div>
-          )}
+          {/* Mira visual */}
+          <div className="absolute inset-0 border-[3px] border-primary/50 m-12 rounded-xl pointer-events-none" />
         </div>
+      </Card>
 
-        {/* MODO MANUAL (Caso o telemóvel do participante esteja com o ecrã partido) */}
-        <Card className="mt-6 border-dashed">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Keyboard className="h-4 w-4" />
-              Validação Manual
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleManualSubmit} className="flex gap-2">
-              <Input
-                placeholder="Insira o ID ou Token do bilhete..."
-                value={manualToken}
-                onChange={(e) => setManualToken(e.target.value)}
-                disabled={isPending}
-              />
-              <Button
-                type="submit"
-                variant="secondary"
-                disabled={isPending || !manualToken.trim()}
-              >
-                Validar
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-muted-foreground" />
+            Entrada Manual
+          </CardTitle>
+          <CardDescription>
+            O QR Code está ilegível? Digita o ID abaixo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleManualSubmit} className="flex gap-2">
+            <Input
+              placeholder="Ex: 9D503333..."
+              value={manualToken}
+              onChange={(e) => setManualToken(e.target.value)}
+              disabled={isPending || status !== "idle"}
+            />
+            <Button
+              type="submit"
+              disabled={isPending || status !== "idle" || !manualToken}
+            >
+              Validar
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Ticket, Users, Settings } from "lucide-react";
+import { LayoutDashboard, Ticket, Users, Settings, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function EventNav({ eventId }: { eventId: string }) {
@@ -14,7 +14,6 @@ export function EventNav({ eventId }: { eventId: string }) {
       name: "Visão Geral",
       href: `/events/${eventId}`,
       icon: LayoutDashboard,
-      // Fica ativo apenas se o URL terminar exatamente no ID do evento
       isActive: pathname === `/events/${eventId}`,
     },
     {
@@ -30,6 +29,12 @@ export function EventNav({ eventId }: { eventId: string }) {
       isActive: pathname.includes(`/events/${eventId}/attendees`),
     },
     {
+      name: "Check-in",
+      href: `/events/${eventId}/checkin`,
+      icon: QrCode,
+      isActive: pathname.includes(`/events/${eventId}/checkin`),
+    },
+    {
       name: "Configurações",
       href: `/events/${eventId}/settings`,
       icon: Settings,
@@ -38,25 +43,22 @@ export function EventNav({ eventId }: { eventId: string }) {
   ];
 
   return (
-    <nav className="flex items-center gap-4 border-b pb-2 overflow-x-auto">
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center gap-2 text-sm font-medium pb-2 px-1 transition-colors whitespace-nowrap",
-              item.isActive
-                ? "text-primary border-b-2 border-primary"
-                : "text-muted-foreground hover:text-primary border-b-2 border-transparent",
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {item.name}
-          </Link>
-        );
-      })}
+    <nav className="flex space-x-2 border-b pb-4 overflow-x-auto mb-6">
+      {navItems.map((item) => (
+        <Link
+          key={item.name}
+          href={item.href}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors",
+            item.isActive
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+        >
+          <item.icon className="h-4 w-4" />
+          {item.name}
+        </Link>
+      ))}
     </nav>
   );
 }

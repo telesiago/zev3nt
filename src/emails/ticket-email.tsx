@@ -7,6 +7,7 @@ import {
   Text,
   Section,
   Hr,
+  Img,
 } from "@react-email/components";
 import * as React from "react";
 
@@ -27,6 +28,9 @@ export default function TicketEmail({
   startDate,
   locationText,
 }: TicketEmailProps) {
+  // Geramos o URL da imagem do QR Code usando o token seguro
+  const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${qrCodeToken}`;
+
   return (
     <Html>
       <Head />
@@ -56,11 +60,17 @@ export default function TicketEmail({
             <Hr style={divider} />
 
             <Text style={instructionText}>
-              Apresenta este código na entrada do evento:
+              Apresenta este QR Code na entrada do evento:
             </Text>
             <div style={codeBox}>
+              <Img
+                src={qrCodeImageUrl}
+                alt="QR Code"
+                width="200"
+                height="200"
+                style={{ margin: "0 auto", display: "block" }}
+              />
               <Text style={codeText}>
-                {/* Mostramos um pedaço do Token como se fosse um código de reserva visual */}
                 {qrCodeToken.split("-")[0].toUpperCase()}
               </Text>
             </div>
@@ -127,9 +137,9 @@ const codeBox = {
 };
 const codeText = {
   fontFamily: "monospace",
-  fontSize: "24px",
-  letterSpacing: "4px",
-  margin: "0",
+  fontSize: "16px",
+  letterSpacing: "2px",
+  margin: "15px 0 0",
   fontWeight: "bold",
   color: "#000",
 };

@@ -1,167 +1,156 @@
+import { redirect } from "next/navigation";
+import { CheckCircle2, Calendar, MapPin, Ticket } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { notFound } from "next/navigation";
-import Link from "next/link";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import {
-  CheckCircle2,
-  Ticket,
-  Calendar,
-  MapPin,
-  QrCode,
-  ArrowLeft,
-} from "lucide-react";
-
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
 
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  // No Next.js 15, as searchParams são uma Promise
-  searchParams: Promise<{ external_reference?: string; payment_id?: string }>;
+  searchParams: { external_reference?: string };
 }) {
-  // 1. Extraímos os parâmetros da URL
-  const { external_reference, payment_id } = await searchParams;
+  const orderId = searchParams.external_reference;
 
-  // Se não houver ID da encomenda, mostramos um erro amigável
-  if (!external_reference) {
-    return (
-      <div className="container mx-auto px-4 py-16 max-w-xl text-center space-y-6">
-        <div className="rounded-full bg-destructive/10 p-4 w-fit mx-auto">
-          <Ticket className="h-8 w-8 text-destructive" />
-        </div>
-        <h1 className="text-2xl font-bold">Pedido não encontrado</h1>
-        <p className="text-muted-foreground">
-          Não conseguimos localizar os detalhes da sua compra.
-        </p>
-        <Link href="/">
-          <Button>Voltar à página inicial</Button>
-        </Link>
-      </div>
-    );
+  if (!orderId) {
+    redirect("/");
   }
 
-  // 2. Vamos à base de dados buscar a encomenda, o evento e o bilhete gerado
+  // Vai buscar os dados da compra à base de dados para desenhar o bilhete
   const order = await prisma.order.findUnique({
-    where: { id: external_reference },
+    where: { id: orderId },
     include: {
       event: true,
       tickets: {
-        include: {
-          ticketTier: true,
-        },
+        include: { ticketTier: true },
       },
     },
   });
 
   if (!order || order.tickets.length === 0) {
-    notFound();
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
+        <h1 className="text-2xl font-bold mb-2">Pedido não encontrado</h1>
+        <p className="text-muted-foreground mb-6">
+          Não foi possível localizar o teu bilhete.
+        </p>
+        <Link href="/" className="text-primary hover:underline">
+          Voltar à página inicial
+        </Link>
+      </div>
+    );
   }
 
-  const ticket = order.tickets[0]; // No nosso MVP, é 1 bilhete por encomenda
   const event = order.event;
-
+  const ticket = order.tickets[0];
   const isOnline = event.format === "ONLINE";
-  const locationText = isOnline
-    ? "Evento Online"
-    : (event.locationDetails as { address?: string })?.address ||
-      "Local a definir";
+  const locationDetails = event.locationDetails as { address?: string } | null;
+
+  // URL para a API que gera a imagem real do QR Code
+  const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${ticket.qrCodeToken}`;
 
   return (
-    <div className="container mx-auto px-4 py-12 max-w-2xl">
-      <div className="text-center space-y-4 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        <div className="rounded-full bg-green-500/10 p-4 w-fit mx-auto">
-          <CheckCircle2 className="h-12 w-12 text-green-500" />
+    <div className="min-h-[80vh] flex flex-col items-center justify-center py-12 px-4 sm:px-6">
+      <div className="flex justify-center mb-6">
+        <div className="rounded-full bg-green-100 p-3">
+          <CheckCircle2 className="h-12 w-12 text-green-600" />
         </div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          Pagamento Confirmado!
-        </h1>
-        <p className="text-muted-foreground text-lg">
-          O teu lugar no evento <strong>{event.title}</strong> está garantido.
-        </p>
       </div>
 
-      {/* O Bilhete Digital */}
-      <Card className="overflow-hidden border-2 shadow-lg animate-in fade-in slide-in-from-bottom-8 duration-700">
-        <div className="h-4 bg-primary" />{" "}
-        {/* Faixa colorida no topo do bilhete */}
-        <CardHeader className="text-center pb-2 border-b border-dashed">
-          <CardTitle className="text-2xl font-black uppercase tracking-wider">
-            {event.title}
-          </CardTitle>
-          <p className="text-sm text-muted-foreground font-medium">
-            {ticket.ticketTier.name}
+      <h1 className="text-3xl font-bold text-center mb-2">
+        Pagamento Confirmado!
+      </h1>
+      <p className="text-muted-foreground text-center mb-10 max-w-md">
+        O teu lugar no evento{" "}
+        <strong className="text-foreground">{event.title}</strong> está
+        garantido. Um e-mail com os detalhes também foi enviado.
+      </p>
+
+      {/* O Bilhete Desenhado */}
+      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border overflow-hidden flex flex-col md:flex-row">
+        {/* Lado Esquerdo - Detalhes do Evento e Participante */}
+        <div className="flex-1 p-6 md:p-8 flex flex-col justify-between">
+          <div>
+            <div className="uppercase tracking-widest text-xs font-bold text-muted-foreground mb-1">
+              {ticket.ticketTier.name}
+            </div>
+            <h2 className="text-2xl font-black uppercase mb-6 leading-tight">
+              {event.title}
+            </h2>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
+                  Participante
+                </p>
+                <p className="font-semibold text-lg">{ticket.attendeeName}</p>
+                <p className="text-sm text-muted-foreground">
+                  Doc: {ticket.attendeeDocument}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 pt-6 border-t grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-start gap-3">
+              <Calendar className="h-5 w-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">
+                  {format(new Date(event.startDate), "dd/MM/yyyy", {
+                    locale: ptBR,
+                  })}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {format(new Date(event.startDate), "HH:mm")}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3">
+              <MapPin className="h-5 w-5 text-primary mt-0.5" />
+              <div>
+                <p className="font-medium">
+                  {isOnline ? "Evento Online" : "Presencial"}
+                </p>
+                <p className="text-sm text-muted-foreground line-clamp-2">
+                  {isOnline
+                    ? "Link será enviado em breve"
+                    : locationDetails?.address || "Endereço a definir"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Lado Direito - O QR Code Real */}
+        <div className="bg-muted/30 p-6 md:p-8 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-dashed min-w-[280px]">
+          <div className="bg-white p-4 rounded-xl shadow-sm border mb-4">
+            {/* Imagem do QR Code gerada dinamicamente */}
+            <img
+              src={qrCodeImageUrl}
+              alt="QR Code do Bilhete"
+              className="h-40 w-40 object-contain"
+            />
+          </div>
+          <p className="text-xs text-center text-muted-foreground mb-4 max-w-[180px]">
+            Apresenta este código na entrada do evento.
           </p>
-        </CardHeader>
-        <CardContent className="p-0 flex flex-col md:flex-row">
-          {/* Informações do Participante e Evento */}
-          <div className="p-6 md:p-8 flex-1 space-y-6">
-            <div>
-              <p className="text-sm text-muted-foreground uppercase tracking-wider font-semibold mb-1">
-                Participante
-              </p>
-              <p className="text-lg font-medium">{ticket.attendeeName}</p>
-              <p className="text-sm text-muted-foreground">
-                {ticket.attendeeDocument}
-              </p>
-            </div>
-
-            <div className="space-y-3 pt-4 border-t">
-              <div className="flex items-center gap-3">
-                <Calendar className="h-5 w-5 text-primary shrink-0" />
-                <div className="flex flex-col">
-                  <span className="text-sm font-medium">
-                    {format(new Date(event.startDate), "dd/MM/yyyy", {
-                      locale: ptBR,
-                    })}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(event.startDate), "HH:mm", {
-                      locale: ptBR,
-                    })}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <MapPin className="h-5 w-5 text-primary shrink-0" />
-                <span className="text-sm font-medium">{locationText}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Área do QR Code (A destacar-se com fundo cinza claro) */}
-          <div className="bg-muted/30 p-6 md:p-8 flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-dashed min-w-[200px]">
-            <div className="bg-white p-4 rounded-xl shadow-sm border mb-4">
-              {/* No futuro podemos usar uma biblioteca como react-qr-code para desenhar um QR real usando o ticket.qrCodeToken */}
-              <QrCode className="h-24 w-24 text-foreground opacity-80" />
-            </div>
-            <p className="text-xs text-center text-muted-foreground max-w-[150px]">
-              Apresenta este código na entrada do evento.
+          <div className="bg-background px-4 py-2 rounded-lg border text-center">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">
+              ID do Bilhete
             </p>
-            <p className="text-[10px] text-muted-foreground mt-4 font-mono">
-              ID: {ticket.id.split("-")[0].toUpperCase()}
+            <p className="font-mono text-sm font-bold tracking-widest">
+              {ticket.qrCodeToken.split("-")[0].toUpperCase()}
             </p>
           </div>
-        </CardContent>
-        <CardFooter className="bg-muted/50 p-4 flex justify-between items-center text-xs text-muted-foreground">
-          <span>Ref Mercado Pago: {payment_id || "N/A"}</span>
-          <span>Zev3nt Ticketing</span>
-        </CardFooter>
-      </Card>
+        </div>
+      </div>
 
-      <div className="mt-8 flex justify-center">
-        <Link href={`/${event.slug}`}>
-          <Button variant="ghost">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Voltar para a página do evento
-          </Button>
+      <div className="mt-8">
+        <Link
+          href={`/${event.slug}`}
+          className="text-primary hover:underline font-medium flex items-center gap-2"
+        >
+          ← Voltar para a página do evento
         </Link>
       </div>
     </div>
