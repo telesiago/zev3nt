@@ -43,7 +43,7 @@ export async function createCheckoutSession(
   const order = await prisma.order.create({
     data: {
       eventId: data.eventId,
-      buyerId: buyer.id, // CORREÇÃO: Passamos o ID do comprador que acabámos de criar/encontrar
+      buyerId: buyer.id, // Passamos o ID do comprador que acabámos de criar/encontrar
       totalAmountCents: tier.priceCents,
       status: "PENDING",
       tickets: {
@@ -97,6 +97,10 @@ export async function createCheckoutSession(
         },
       ],
       external_reference: order.id,
+
+      // 👉 A LINHA MÁGICA QUE FALTAVA PARA FORÇAR O WEBHOOK:
+      notification_url: `${appUrl}/api/webhooks/mercadopago`,
+
       back_urls: {
         success: `${appUrl}/checkout/success`,
         pending: `${appUrl}/checkout/pending`,
