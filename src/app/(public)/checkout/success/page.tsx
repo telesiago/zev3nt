@@ -8,10 +8,19 @@ import Link from "next/link";
 export default async function CheckoutSuccessPage({
   searchParams,
 }: {
-  searchParams: { external_reference?: string };
+  // No Next.js 15, os searchParams também são Promises!
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const orderId = searchParams.external_reference;
+  // Desempacotamos os parâmetros primeiro
+  const resolvedSearchParams = await searchParams;
 
+  // E agora sim, extraímos a referência do Mercado Pago
+  const orderId =
+    typeof resolvedSearchParams.external_reference === "string"
+      ? resolvedSearchParams.external_reference
+      : undefined;
+
+  // Se não houver ID (ex: alguém tentou aceder à página diretamente sem comprar), mandamos para a home
   if (!orderId) {
     redirect("/");
   }
