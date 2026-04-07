@@ -1,39 +1,49 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
 import { MercadoPagoConfig, Preference } from "mercadopago";
+import { headers } from "next/headers";
 
-export async function createCheckoutSession(data: {
-  eventId: string;
-  ticketTierId: string;
-  name: string;
-  email: string;
-  cpf: string;
-}) {
-  // 1. Ir buscar o preço real à base de dados (nunca confiar no preço do frontend)
+// Validação dos dados que vêm do formulário público
+const checkoutSchema = z.object({
+  eventId: z.string(),
+  ticketTierId: z.string(),
+  name: z.string().min(3),
+  email: z.string().email(),
+  cpf: z.string().min(11),
+});
+
+export async function createCheckoutSession(
+  values: z.infer<typeof checkoutSchema>,
+) {
+  const data = checkoutSchema.parse(values);
+
+  // 1. Procurar o lote de bilhetes na base de dados
   const tier = await prisma.ticketTier.findUnique({
     where: { id: data.ticketTierId },
   });
 
-  if (!tier) throw new Error("Lote não encontrado");
+  if (!tier) throw new Error("Lote não encontrado.");
 
-  // 2. Garantir que o comprador existe na base de dados (Guest Checkout)
-  const user = await prisma.user.upsert({
+  // 2. Encontrar ou criar o comprador (User)
+  // Como o Order exige um buyerId no schema do Prisma, precisamos de o ter na base de dados.
+  // O upsert procura pelo e-mail; se não achar, cria o utilizador automaticamente.
+  const buyer = await prisma.user.upsert({
     where: { email: data.email },
-    update: { name: data.name },
+    update: {}, // Não alteramos os dados se ele já for registado (ex: um organizador a comprar bilhete)
     create: {
-      email: data.email,
       name: data.name,
+      email: data.email,
       role: "USER",
-      passwordHash: "guest", // Utilizador convidado sem senha
     },
   });
 
-  // 3. Criar a Encomenda (Order) e o Bilhete Pendente no Prisma
+  // 3. Criar o Pedido (Order) como PENDENTE e já criar o bilhete associado
   const order = await prisma.order.create({
     data: {
-      buyerId: user.id,
       eventId: data.eventId,
+      buyerId: buyer.id, // CORREÇÃO: Passamos o ID do comprador que acabámos de criar/encontrar
       totalAmountCents: tier.priceCents,
       status: "PENDING",
       tickets: {
@@ -42,20 +52,23 @@ export async function createCheckoutSession(data: {
           attendeeName: data.name,
           attendeeEmail: data.email,
           attendeeDocument: data.cpf,
-          // Geramos já o código do bilhete (mas só será validado quando a Order estiver PAID)
+          // Geramos o código do bilhete (só será validado pelo sistema quando a Order estiver PAID)
           qrCodeToken: crypto.randomUUID(),
         },
       },
     },
   });
 
-  // 4. URL de Retorno Fixa e Segura (Ignorando o .env para evitar erros de leitura do Node.js)
-  // Sem query parameters (?orderId=) porque o Mercado Pago rejeita e já envia o external_reference automaticamente!
-  const appUrl = "https://iago-teles.web.app/";
+  // 4. O SEGREDO: Resolver a URL dinamicamente sem depender de variáveis de ambiente!
+  // Descobre automaticamente se está no localhost ou no domínio da Vercel
+  const headersList = await headers();
+  const host = headersList.get("x-forwarded-host") || headersList.get("host");
+  const protocol =
+    headersList.get("x-forwarded-proto") ||
+    (process.env.NODE_ENV === "development" ? "http" : "https");
 
-  const successUrl = `${appUrl}/checkout/success`;
-  const pendingUrl = `${appUrl}/checkout/pending`;
-  const failureUrl = `${appUrl}/checkout/failure`;
+  // Usa o NEXT_PUBLIC_APP_URL se existir, caso contrário monta o link automático
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`;
 
   // 5. Se o bilhete for grátis, ignoramos o Mercado Pago e aprovamos direto
   if (tier.priceCents === 0) {
@@ -63,8 +76,7 @@ export async function createCheckoutSession(data: {
       where: { id: order.id },
       data: { status: "PAID" },
     });
-    // Para bilhetes grátis, enviamos o parâmetro manualmente pois não passamos pelo MP
-    return { url: `${successUrl}?external_reference=${order.id}` };
+    return { url: `${appUrl}/checkout/success?external_reference=${order.id}` };
   }
 
   // 6. Configurar Mercado Pago e criar a Preference de Pagamento
@@ -73,34 +85,31 @@ export async function createCheckoutSession(data: {
   });
   const preference = new Preference(client);
 
-  const response = await preference.create({
+  const result = await preference.create({
     body: {
       items: [
         {
           id: tier.id,
-          title: `Ingresso Zev3nt: ${tier.name}`,
+          title: `Ingresso - ${tier.name}`,
           quantity: 1,
-          unit_price: tier.priceCents / 100, // Mercado Pago exige o valor em decimais (Reais)
+          unit_price: tier.priceCents / 100, // Converte cêntimos para reais
+          currency_id: "BRL",
         },
       ],
-      payer: {
-        name: data.name,
-        email: data.email,
-        identification: {
-          type: "CPF",
-          number: data.cpf.replace(/\D/g, ""), // Remove pontos e traços do CPF
-        },
-      },
-      external_reference: order.id, // CRUCIAL: O Mercado Pago vai enviar isto de volta na URL de sucesso!
+      external_reference: order.id,
       back_urls: {
-        success: successUrl,
-        pending: pendingUrl,
-        failure: failureUrl,
+        success: `${appUrl}/checkout/success`,
+        pending: `${appUrl}/checkout/pending`,
+        failure: `${appUrl}/checkout/failure`,
       },
       auto_return: "approved",
+      payer: {
+        email: data.email,
+        name: data.name,
+      },
     },
   });
 
-  // Retornar o link de pagamento gerado pelo Mercado Pago
-  return { url: response.init_point! };
+  // Devolvemos o link mágico de pagamento do Mercado Pago
+  return { url: result.init_point };
 }
