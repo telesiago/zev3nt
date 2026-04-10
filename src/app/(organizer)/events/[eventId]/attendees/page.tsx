@@ -5,17 +5,14 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Users,
-  Search,
   Download,
-  Mail,
-  User,
-  Calendar,
+  Clock,
+  UserCheck,
   Ticket as TicketIcon,
 } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -26,14 +23,20 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
+// Importamos o novo componente de pesquisa
+import { AttendeeSearch } from "./attendee-search";
+
 interface EventAttendeesPageProps {
   params: Promise<{ eventId: string }>;
+  searchParams: Promise<{ q?: string }>; // Recebemos os parâmetros de busca
 }
 
 export default async function EventAttendeesPage({
   params,
+  searchParams,
 }: EventAttendeesPageProps) {
   const { eventId } = await params;
+  const { q } = await searchParams; // Extraímos a query "q"
   const session = await auth();
 
   if (!session?.user?.id) {
@@ -52,18 +55,34 @@ export default async function EventAttendeesPage({
     notFound();
   }
 
-  // 2. Corrigido: Buscamos os participantes usando o modelo 'attendee'
-  // Filtramos por pedidos que tenham o status PAID
+  // 2. Buscamos a contagem total de forma independente (para os cards não mudarem na pesquisa)
+  const totalAttendeesCount = await prisma.attendee.count({
+    where: { eventId: eventId, order: { status: "PAID" } },
+  });
+
+  const checkedInCount = await prisma.attendee.count({
+    where: { eventId: eventId, order: { status: "PAID" }, isCheckedIn: true },
+  });
+
+  // 3. Buscamos os participantes aplicando o filtro de pesquisa (se existir)
   const attendees = await prisma.attendee.findMany({
     where: {
       eventId: eventId,
       order: {
         status: "PAID",
       },
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              { email: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : {}),
     },
     include: {
-      ticketType: true, // Inclui detalhes do tipo de ingresso (nome, preço)
-      order: true, // Inclui detalhes da compra (data, id do pedido)
+      ticketType: true,
+      order: true,
     },
     orderBy: {
       createdAt: "desc",
@@ -87,7 +106,7 @@ export default async function EventAttendeesPage({
         </div>
       </div>
 
-      {/* Cards de Resumo */}
+      {/* Cards de Resumo (Estes valores agora estão fixos baseados no total) */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -97,7 +116,24 @@ export default async function EventAttendeesPage({
             <Users className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{attendees.length}</div>
+            <div className="text-2xl font-bold">{totalAttendeesCount}</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Check-ins Realizados
+            </CardTitle>
+            <UserCheck className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              {checkedInCount}
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                / {totalAttendeesCount}
+              </span>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -107,14 +143,8 @@ export default async function EventAttendeesPage({
         <CardHeader>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CardTitle className="text-lg">Lista de Inscritos</CardTitle>
-            <div className="relative w-full md:w-72">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Buscar por nome ou e-mail..."
-                className="pl-8"
-              />
-            </div>
+            {/* Aqui renderizamos o novo componente de pesquisa */}
+            <AttendeeSearch />
           </div>
         </CardHeader>
         <CardContent>
@@ -125,18 +155,19 @@ export default async function EventAttendeesPage({
                   <TableHead>Participante</TableHead>
                   <TableHead>Ingresso</TableHead>
                   <TableHead>Data da Compra</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
+                  <TableHead>Check-in</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {attendees.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={4}
                       className="h-24 text-center text-muted-foreground"
                     >
-                      Nenhum participante confirmado até ao momento.
+                      {q
+                        ? `Nenhum participante encontrado com "${q}".`
+                        : "Nenhum participante confirmado até ao momento."}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -164,21 +195,31 @@ export default async function EventAttendeesPage({
                         })}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant="outline"
-                          className="bg-green-50 text-green-700 border-green-200"
-                        >
-                          Confirmado
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Enviar E-mail"
-                        >
-                          <Mail className="h-4 w-4" />
-                        </Button>
+                        {person.isCheckedIn ? (
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant="outline"
+                              className="bg-green-50 text-green-700 border-green-200 w-fit"
+                            >
+                              Realizado
+                            </Badge>
+                            {person.checkInTime && (
+                              <span className="text-[11px] text-muted-foreground flex items-center gap-1 font-medium">
+                                <Clock className="h-3 w-3" />
+                                {format(new Date(person.checkInTime), "HH:mm", {
+                                  locale: ptBR,
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <Badge
+                            variant="secondary"
+                            className="text-muted-foreground font-normal w-fit"
+                          >
+                            Pendente
+                          </Badge>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

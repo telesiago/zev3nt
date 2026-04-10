@@ -10,12 +10,10 @@ import {
   Ticket,
   Menu,
   LogOut,
-  Search,
   User,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -160,24 +158,13 @@ export function TopHeader({ userName }: { userName: string }) {
         </SheetContent>
       </Sheet>
 
-      <div className="w-full flex-1">
-        <form>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Buscar inscritos, eventos..."
-              className="w-full appearance-none bg-background pl-8 shadow-none md:w-2/3 lg:w-1/3"
-            />
-          </div>
-        </form>
-      </div>
+      {/* Espaçador flexível para empurrar o menu do utilizador para a direita */}
+      <div className="w-full flex-1"></div>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="secondary" size="icon" className="rounded-full">
             <Avatar>
-              {/* Opcional: Se tiveres uma foto de perfil, vai aqui no src */}
               <AvatarImage src="" alt={userName} />
               <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
                 {initials}
@@ -190,7 +177,6 @@ export function TopHeader({ userName }: { userName: string }) {
           <DropdownMenuLabel>{userName}</DropdownMenuLabel>
           <DropdownMenuSeparator />
 
-          {/* As rotas agora funcionam! */}
           <DropdownMenuItem asChild>
             <Link href="/settings" className="cursor-pointer w-full">
               Minha Conta
@@ -202,7 +188,6 @@ export function TopHeader({ userName }: { userName: string }) {
 
           <DropdownMenuSeparator />
 
-          {/* O botão Sair usa a função signOut do Auth.js para encerrar a sessão e redirecionar para a Home */}
           <DropdownMenuItem
             className="text-red-600 cursor-pointer focus:text-red-600"
             onClick={() => signOut({ callbackUrl: "/" })}
