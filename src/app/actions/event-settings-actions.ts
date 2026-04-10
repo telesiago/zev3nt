@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { EventStatus } from "@prisma/client";
 
 // 1. Mudar o Status (Publicar / Rascunho)
 export async function toggleEventStatus(
@@ -17,7 +18,7 @@ export async function toggleEventStatus(
 
   await prisma.event.update({
     where: { id: eventId, organizerId: session.user.id },
-    data: { status: newStatus },
+    data: { status: newStatus as EventStatus },
   });
 
   revalidatePath(`/events/${eventId}`);
@@ -34,7 +35,8 @@ export async function updateCoverImage(eventId: string, imageUrl: string) {
 
   await prisma.event.update({
     where: { id: eventId, organizerId: session.user.id },
-    data: { coverImageUrl: imageUrl },
+    // Corrigido: Usando imageUrl conforme o novo schema
+    data: { imageUrl: imageUrl },
   });
 
   revalidatePath(`/events/${eventId}/settings`);
@@ -48,7 +50,9 @@ export async function deleteEvent(eventId: string) {
 
   // Apaga o evento e tudo o que está ligado a ele em cascata (se configurado no Prisma)
   // Ou apaga manualmente se não houver onDelete: Cascade
-  await prisma.ticketTier.deleteMany({ where: { eventId } });
+
+  // Corrigido: Usando ticketType em vez de ticketTier
+  await prisma.ticketType.deleteMany({ where: { eventId } });
   await prisma.order.deleteMany({ where: { eventId } });
 
   await prisma.event.delete({
