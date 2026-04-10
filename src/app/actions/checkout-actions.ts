@@ -6,16 +6,26 @@ import { z } from "zod";
 import { MercadoPagoConfig, Preference } from "mercadopago";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { validateCoupon } from "./coupon-actions"; // Importamos a nossa função de validação
+import { validateCoupon } from "./coupon-actions";
 
-// Validação dos dados que vêm do formulário público (agora aceita couponCode)
+// Importações necessárias para enviar e-mails nas compras gratuitas
+import { Resend } from "resend";
+import { OrganizerSaleEmail } from "@/emails/organizer-sale-email";
+import TicketEmail from "@/emails/ticket-email";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+// Inicializa o Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Validação dos dados que vêm do formulário público
 const checkoutSchema = z.object({
   eventId: z.string(),
   ticketTierId: z.string(),
   name: z.string().min(3),
   email: z.string().email(),
   cpf: z.string().min(11),
-  couponCode: z.string().optional(), // NOVO: Campo opcional
+  couponCode: z.string().optional(),
 });
 
 export async function createCheckoutSession(
@@ -31,7 +41,7 @@ export async function createCheckoutSession(
 
   if (!ticketType) throw new Error("Lote de ingressos não encontrado.");
 
-  // 2. Lógica de Cupom e Cálculo do Preço Final (SERVER-SIDE)
+  // 2. Lógica de Cupom e Cálculo do Preço Final
   let finalPrice = ticketType.price;
   let discountAmount = 0;
   let appliedCouponId: string | null = null;
@@ -54,7 +64,6 @@ export async function createCheckoutSession(
 
       finalPrice = Math.max(0, finalPrice - discountAmount);
 
-      // Incrementamos o uso do cupom no banco de dados IMEDIATAMENTE
       await prisma.coupon.update({
         where: { id: appliedCouponId },
         data: { currentUses: { increment: 1 } },
@@ -73,14 +82,14 @@ export async function createCheckoutSession(
     },
   });
 
-  // 4. Criar o Pedido (Order) com os dados do cupom
+  // 4. Criar o Pedido (Order)
   const order = await prisma.order.create({
     data: {
       eventId: data.eventId,
       userId: buyer.id,
-      totalAmount: finalPrice, // Preço com desconto
-      discountAmount: discountAmount, // Guardamos o desconto no banco
-      couponId: appliedCouponId, // Guardamos a referência do cupom usado
+      totalAmount: finalPrice,
+      discountAmount: discountAmount,
+      couponId: appliedCouponId,
       status: "PENDING",
       items: {
         create: {
@@ -111,16 +120,78 @@ export async function createCheckoutSession(
     process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`
   ).replace(/\/$/, "");
 
-  // 6. Se o bilhete for grátis (ou ficou 100% grátis devido ao cupom), aprovamos direto
+  // 6. TRATAMENTO DE BILHETES GRATUITOS (Agora com envio de E-mails!)
   if (finalPrice === 0) {
-    await prisma.order.update({
+    const updatedOrder = await prisma.order.update({
       where: { id: order.id },
       data: { status: "PAID" },
+      include: {
+        event: { include: { organizer: true } },
+        attendees: { include: { ticketType: true } },
+      },
     });
+
+    // Enviar os e-mails antes de redirecionar
+    if (updatedOrder.attendees.length > 0 && process.env.RESEND_API_KEY) {
+      const attendee = updatedOrder.attendees[0];
+      const eventData = updatedOrder.event;
+      const isOnline = eventData.location?.toLowerCase().includes("online");
+      const locationText = isOnline ? "Evento Online" : eventData.location;
+
+      // E-mail do Comprador
+      try {
+        await resend.emails.send({
+          from: "Zev3nt Ticketing <onboarding@resend.dev>",
+          to: attendee.email,
+          subject: `O teu bilhete para ${eventData.title} 🎟️`,
+          react: TicketEmail({
+            attendeeName: attendee.name,
+            eventTitle: eventData.title,
+            ticketTierName: attendee.ticketType.name,
+            qrCodeToken: attendee.qrCode,
+            startDate: format(
+              new Date(eventData.date),
+              "dd/MM/yyyy 'às' HH:mm",
+              { locale: ptBR },
+            ),
+            locationText: locationText,
+          }),
+        });
+      } catch (err) {
+        console.error("Erro ao enviar bilhete grátis:", err);
+      }
+
+      // E-mail do Organizador
+      if (eventData.organizer.email) {
+        try {
+          await resend.emails.send({
+            from: "Zev3nt <onboarding@resend.dev>",
+            to: eventData.organizer.email,
+            subject: `🎉 Nova Inscrição (Grátis) - ${eventData.title}`,
+            react: OrganizerSaleEmail({
+              organizerName: eventData.organizer.name || "Organizador",
+              eventName: eventData.title,
+              attendeeName: attendee.name,
+              attendeeEmail: attendee.email,
+              ticketName: attendee.ticketType.name,
+              amountPaid: 0,
+              orderId: updatedOrder.id,
+            }),
+          });
+        } catch (err) {
+          console.error(
+            "Erro ao notificar organizador de bilhete grátis:",
+            err,
+          );
+        }
+      }
+    }
+
+    // Redirecionar para o sucesso
     redirect(`${appUrl}/checkout/success?orderId=${order.id}`);
   }
 
-  // 7. Configurar Mercado Pago
+  // 7. Configurar Mercado Pago (Apenas para bilhetes pagos)
   const client = new MercadoPagoConfig({
     accessToken: process.env.MP_ACCESS_TOKEN!,
   });
@@ -142,7 +213,7 @@ export async function createCheckoutSession(
             id: ticketType.id,
             title: `Ingresso - ${ticketType.name}`,
             quantity: 1,
-            unit_price: Number(finalPrice.toFixed(2)), // Envia o preço final com desconto
+            unit_price: Number(finalPrice.toFixed(2)),
             currency_id: "BRL",
           },
         ],
