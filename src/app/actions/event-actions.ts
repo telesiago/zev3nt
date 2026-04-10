@@ -2,84 +2,146 @@
 
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { z } from "zod";
+import { eventSchema } from "@/schemas/event";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { eventSchema } from "@/schemas/event";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
-// 2. Função Server Action que o formulário vai chamar
+/**
+ * Cria um novo evento na base de dados
+ */
 export async function createEvent(values: z.infer<typeof eventSchema>) {
-  // A. Verificar segurança: Quem está a tentar criar o evento?
+  // A. Verificar segurança
   const session = await auth();
   if (!session?.user?.id) {
-    throw new Error("Acesso negado. Sessão expirada.");
+    return { error: "Não autorizado. Por favor, faça login novamente." };
   }
 
-  // B. Validar os dados novamente no backend (Segurança extra)
-  const validatedFields = eventSchema.parse(values);
+  try {
+    // B. Validar os dados novamente no backend
+    const validatedFields = eventSchema.parse(values);
 
-  // C. Gerar um slug URL-friendly (ex: "meu-evento-1709823908")
-  const baseSlug = validatedFields.title
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove acentos
-    .replace(/[^a-z0-9]+/g, "-") // Substitui espaços por hífen
-    .replace(/(^-|-$)+/g, ""); // Limpa hífens nas pontas
+    // C. Gerar um slug URL-friendly único
+    const baseSlug = validatedFields.title
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/(^-|-$)+/g, "");
 
-  const uniqueSlug = `${baseSlug}-${Date.now()}`;
+    const uniqueSlug = `${baseSlug}-${Date.now()}`;
 
-  // D. Guardar na Base de Dados via Prisma
-  await prisma.event.create({
-    data: {
-      organizerId: session.user.id,
-      title: validatedFields.title,
-      slug: uniqueSlug,
-      description: validatedFields.description || "",
-      format: validatedFields.format,
-      startDate: validatedFields.startDate,
-      endDate: validatedFields.endDate,
-      locationDetails: validatedFields.location
-        ? { address: validatedFields.location }
-        : {},
-      status: "DRAFT", // Começa sempre como Rascunho para não ir direto para o ar
-    },
-  });
+    // D. Guardar na Base de Dados via Prisma
+    await prisma.event.create({
+      data: {
+        organizerId: session.user.id,
+        title: validatedFields.title,
+        slug: uniqueSlug,
+        description: validatedFields.description,
+        date: new Date(validatedFields.date),
+        location: validatedFields.location,
+        locationUrl: validatedFields.locationUrl || null,
+        category: validatedFields.category,
+        imageUrl: validatedFields.imageUrl || null,
+        status: validatedFields.status || "DRAFT",
+      },
+    });
+  } catch (error: unknown) {
+    // Tratamento seguro de erro do Prisma
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2003") {
+        return {
+          error:
+            "Sessão inválida: O seu utilizador não foi encontrado na base de dados. Por favor, saia e entre novamente.",
+        };
+      }
+    }
 
-  // E. Limpar a cache do Next.js e redirecionar o organizador para a lista de eventos
+    console.error("Erro ao criar evento:", error);
+    return { error: "Ocorreu um erro inesperado ao criar o evento." };
+  }
+
+  // Redirecionamento fora do try/catch para evitar capturar o erro interno do Next.js
   revalidatePath("/events");
+  revalidatePath("/dashboard");
   redirect("/events");
 }
 
-// NOVA FUNÇÃO: Atualizar dados básicos do evento
+/**
+ * Atualiza um evento existente
+ */
 export async function updateEvent(
-  eventId: string,
+  id: string,
   values: z.infer<typeof eventSchema>,
 ) {
   const session = await auth();
   if (!session?.user?.id) {
-    throw new Error("Acesso negado. Sessão expirada.");
+    return { error: "Não autorizado." };
   }
 
-  const validatedFields = eventSchema.parse(values);
+  try {
+    const existingEvent = await prisma.event.findUnique({
+      where: { id },
+    });
 
-  // Atualizamos na base de dados, garantindo que o evento pertence a este organizador
-  await prisma.event.update({
-    where: { id: eventId, organizerId: session.user.id },
-    data: {
-      title: validatedFields.title,
-      description: validatedFields.description || "",
-      format: validatedFields.format,
-      startDate: validatedFields.startDate,
-      endDate: validatedFields.endDate,
-      // Como o locationDetails é um JSON, gravamos no formato correto
-      locationDetails: validatedFields.location
-        ? { address: validatedFields.location }
-        : {},
-    },
+    if (!existingEvent || existingEvent.organizerId !== session.user.id) {
+      return { error: "Evento não encontrado ou permissão negada." };
+    }
+
+    const validatedFields = eventSchema.parse(values);
+
+    await prisma.event.update({
+      where: { id },
+      data: {
+        title: validatedFields.title,
+        description: validatedFields.description,
+        date: new Date(validatedFields.date),
+        location: validatedFields.location,
+        locationUrl: validatedFields.locationUrl || null,
+        category: validatedFields.category,
+        imageUrl: validatedFields.imageUrl || null,
+        status: validatedFields.status,
+      },
+    });
+
+    revalidatePath("/events");
+    revalidatePath(`/events/${id}`);
+    revalidatePath(`/events/${id}/settings`);
+    revalidatePath("/dashboard");
+    revalidatePath(`/${existingEvent.slug}`);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Erro ao atualizar evento:", error);
+    return { error: "Falha ao atualizar o evento." };
+  }
+}
+
+/**
+ * Apaga um evento
+ */
+export async function deleteEvent(id: string) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    throw new Error("Não autorizado");
+  }
+
+  const existingEvent = await prisma.event.findUnique({
+    where: { id },
   });
 
-  // Limpar a cache para refletir as mudanças instantaneamente
-  revalidatePath(`/events/${eventId}`);
-  revalidatePath(`/events/${eventId}/settings`);
-  revalidatePath(`/`);
+  if (!existingEvent || existingEvent.organizerId !== session.user.id) {
+    throw new Error("Permissão negada");
+  }
+
+  await prisma.event.delete({
+    where: { id },
+  });
+
+  revalidatePath("/events");
+  revalidatePath("/dashboard");
+  redirect("/events");
 }

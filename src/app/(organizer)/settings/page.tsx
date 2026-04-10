@@ -35,6 +35,8 @@ export default async function AccountSettingsPage() {
           <div className="space-y-2">
             <Label htmlFor="name">Nome Completo</Label>
             <div className="relative">
+              {/* Ícone centrado verticalmente à esquerda */}
+              <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 id="name"
                 defaultValue={user?.name || ""}
@@ -46,11 +48,13 @@ export default async function AccountSettingsPage() {
           <div className="space-y-2">
             <Label htmlFor="email">E-mail de Acesso</Label>
             <div className="relative">
+              {/* Ícone centrado verticalmente à esquerda */}
+              <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
                 id="email"
                 type="email"
                 defaultValue={user?.email || ""}
-                className="pl-1000"
+                className="pl-10"
                 readOnly
               />
             </div>

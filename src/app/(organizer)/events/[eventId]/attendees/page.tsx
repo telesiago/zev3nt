@@ -1,15 +1,21 @@
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notFound, redirect } from "next/navigation";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Users, CheckCircle2, CircleDashed } from "lucide-react";
-
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Users,
+  Search,
+  Download,
+  Mail,
+  User,
+  Calendar,
+  Ticket as TicketIcon,
+} from "lucide-react";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -20,130 +26,166 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
+interface EventAttendeesPageProps {
+  params: Promise<{ eventId: string }>;
+}
+
 export default async function EventAttendeesPage({
   params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
+}: EventAttendeesPageProps) {
   const { eventId } = await params;
+  const session = await auth();
 
-  // Vamos procurar todos os bilhetes associados a pedidos PAGOS deste evento
-  const tickets = await prisma.ticket.findMany({
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  // 1. Verificamos o evento e a permissão
+  const event = await prisma.event.findUnique({
     where: {
+      id: eventId,
+      organizerId: session.user.id,
+    },
+  });
+
+  if (!event) {
+    notFound();
+  }
+
+  // 2. Corrigido: Buscamos os participantes usando o modelo 'attendee'
+  // Filtramos por pedidos que tenham o status PAID
+  const attendees = await prisma.attendee.findMany({
+    where: {
+      eventId: eventId,
       order: {
-        eventId: eventId,
         status: "PAID",
       },
     },
     include: {
-      ticketTier: true,
-      order: true,
+      ticketType: true, // Inclui detalhes do tipo de ingresso (nome, preço)
+      order: true, // Inclui detalhes da compra (data, id do pedido)
     },
     orderBy: {
-      createdAt: "desc", // Mostra os compradores mais recentes primeiro
+      createdAt: "desc",
     },
   });
 
-  // Contadores para o resumo
-  const totalAttendees = tickets.length;
-  const checkedInCount = tickets.filter((t) => t.checkInStatus).length;
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">
-            Lista de Inscritos
-          </h2>
-          <p className="text-muted-foreground text-sm">
-            Gere os participantes e verifica o estado do check-in.
+          <h1 className="text-2xl font-bold tracking-tight">Participantes</h1>
+          <p className="text-sm text-muted-foreground">
+            Visualize e gerencie as pessoas confirmadas no evento {event.title}.
           </p>
         </div>
-
-        {/* Resumo rápido no topo */}
-        <div className="flex gap-4 text-sm">
-          <div className="flex flex-col items-end">
-            <span className="text-muted-foreground">Total:</span>
-            <span className="font-semibold text-lg">{totalAttendees}</span>
-          </div>
-          <div className="w-px h-10 bg-border"></div>
-          <div className="flex flex-col items-end">
-            <span className="text-muted-foreground">Entraram:</span>
-            <span className="font-semibold text-lg text-primary">
-              {checkedInCount}
-            </span>
-          </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-2">
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </Button>
         </div>
       </div>
 
+      {/* Cards de Resumo */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-xs font-medium text-muted-foreground">
+              Total Confirmados
+            </CardTitle>
+            <Users className="h-4 w-4 text-primary" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{attendees.length}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabela de Participantes */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle>Participantes Confirmados</CardTitle>
-          <CardDescription>
-            Apenas bilhetes com pagamento aprovado aparecem nesta lista.
-          </CardDescription>
+        <CardHeader>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <CardTitle className="text-lg">Lista de Inscritos</CardTitle>
+            <div className="relative w-full md:w-72">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Buscar por nome ou e-mail..."
+                className="pl-8"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          {tickets.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground border-2 border-dashed rounded-lg">
-              <Users className="h-10 w-10 mb-4 opacity-50" />
-              <p>Ainda não tens participantes inscritos neste evento.</p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Participante</TableHead>
+                  <TableHead>Ingresso</TableHead>
+                  <TableHead>Data da Compra</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {attendees.length === 0 ? (
                   <TableRow>
-                    <TableHead>Participante</TableHead>
-                    <TableHead>Documento (CPF)</TableHead>
-                    <TableHead>Lote</TableHead>
-                    <TableHead>Data da Compra</TableHead>
-                    <TableHead className="text-right">Status</TableHead>
+                    <TableCell
+                      colSpan={5}
+                      className="h-24 text-center text-muted-foreground"
+                    >
+                      Nenhum participante confirmado até ao momento.
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tickets.map((ticket) => (
-                    <TableRow key={ticket.id}>
+                ) : (
+                  attendees.map((person) => (
+                    <TableRow key={person.id}>
                       <TableCell>
-                        <div className="font-medium">{ticket.attendeeName}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {ticket.attendeeEmail}
+                        <div className="flex flex-col">
+                          <span className="font-medium">{person.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {person.email}
+                          </span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {ticket.attendeeDocument}
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <TicketIcon className="h-3 w-3 text-primary" />
+                          <span className="text-sm">
+                            {person.ticketType.name}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {format(new Date(person.createdAt), "dd/MM/yyyy", {
+                          locale: ptBR,
+                        })}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="font-normal">
-                          {ticket.ticketTier.name}
+                        <Badge
+                          variant="outline"
+                          className="bg-green-50 text-green-700 border-green-200"
+                        >
+                          Confirmado
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {format(
-                          new Date(ticket.createdAt),
-                          "dd/MM/yyyy HH:mm",
-                          { locale: ptBR },
-                        )}
-                      </TableCell>
                       <TableCell className="text-right">
-                        {ticket.checkInStatus ? (
-                          <div className="flex items-center justify-end gap-1 text-green-600 font-medium text-sm">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Validado
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1 text-muted-foreground font-medium text-sm">
-                            <CircleDashed className="h-4 w-4" />
-                            Pendente
-                          </div>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Enviar E-mail"
+                        >
+                          <Mail className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </div>

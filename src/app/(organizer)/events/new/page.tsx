@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { createEvent } from "@/app/actions/event-actions";
 import { eventSchema } from "@/schemas/event";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-// 1. Criamos um tipo forte e estrito a partir do nosso Zod Schema
+// 1. Criamos um tipo forte e estrito a partir do nosso Zod Schema atualizado
 type EventFormValues = z.infer<typeof eventSchema>;
 
 // Helper para formatar a data para o input nativo mantendo o fuso local (Brasil)
@@ -49,25 +51,43 @@ const formatLocalDatetime = (date: Date | string | undefined) => {
 
 export default function NewEventPage() {
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
-  // 2. Inicializamos o form usando o tipo que criámos
+  // 2. Inicializamos o form usando o tipo que criámos com os campos NOVOS
   const form = useForm<EventFormValues>({
-    // 3. Utilizamos uma asserção segura ('unknown' -> 'Resolver') em vez do perigoso 'any'
     resolver: zodResolver(eventSchema) as unknown as Resolver<EventFormValues>,
     defaultValues: {
       title: "",
       description: "",
+      category: "",
+      date: "",
       location: "",
+      locationUrl: "",
+      imageUrl: "",
+      status: "DRAFT", // Por defeito criamos como rascunho
     },
   });
 
-  // A função onSubmit agora também usa o nosso tipo limpo
+  // A função onSubmit agora trata dos novos campos e limpa strings vazias
   function onSubmit(values: EventFormValues) {
     startTransition(() => {
-      createEvent(values).catch((error) => {
-        console.error(error);
-        alert("Ocorreu um erro ao criar o evento. Verifica a consola.");
-      });
+      const cleanedValues = {
+        ...values,
+        locationUrl: values.locationUrl === "" ? undefined : values.locationUrl,
+        imageUrl: values.imageUrl === "" ? undefined : values.imageUrl,
+      };
+
+      // Tenta criar o evento; se a promessa resolver, assumimos sucesso.
+      createEvent(cleanedValues)
+        .then(() => {
+          toast.success("Evento criado com sucesso!");
+          router.push(`/events`);
+          router.refresh();
+        })
+        .catch((error) => {
+          console.error(error);
+          toast.error("Ocorreu um erro ao criar o evento. Verifica a consola.");
+        });
     });
   }
 
@@ -104,23 +124,24 @@ export default function NewEventPage() {
               <div className="grid gap-6 md:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="format"
+                  name="status"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Formato</FormLabel>
+                      <FormLabel>Status Inicial</FormLabel>
                       <Select
                         onValueChange={field.onChange}
                         defaultValue={field.value}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Selecione o formato" />
+                            <SelectValue placeholder="Selecione o status" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="IN_PERSON">Presencial</SelectItem>
-                          <SelectItem value="ONLINE">Online</SelectItem>
-                          <SelectItem value="HYBRID">Híbrido</SelectItem>
+                          <SelectItem value="DRAFT">
+                            Rascunho (Privado)
+                          </SelectItem>
+                          <SelectItem value="PUBLISHED">Publicado</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -130,13 +151,13 @@ export default function NewEventPage() {
 
                 <FormField
                   control={form.control}
-                  name="location"
+                  name="category"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Localização (Morada ou Link)</FormLabel>
+                      <FormLabel>Categoria</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Ex: Av. Paulista, 1000 ou Zoom Link"
+                          placeholder="Ex: Tecnologia, Música, Workshop"
                           {...field}
                         />
                       </FormControl>
@@ -149,18 +170,15 @@ export default function NewEventPage() {
               <div className="grid gap-6 md:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="startDate"
+                  name="date"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Início</FormLabel>
+                      <FormLabel>Data e Hora</FormLabel>
                       <FormControl>
-                        {/* Aplicamos a correção do fuso horário sem usar any */}
                         <Input
                           type="datetime-local"
                           {...field}
-                          value={formatLocalDatetime(
-                            field.value as Date | undefined,
-                          )}
+                          value={formatLocalDatetime(field.value)}
                         />
                       </FormControl>
                       <FormMessage />
@@ -170,18 +188,53 @@ export default function NewEventPage() {
 
                 <FormField
                   control={form.control}
-                  name="endDate"
+                  name="location"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Fim</FormLabel>
+                      <FormLabel>Localização (Nome ou Morada)</FormLabel>
                       <FormControl>
-                        {/* Aplicamos a correção do fuso horário sem usar any */}
                         <Input
-                          type="datetime-local"
+                          placeholder="Ex: Av. Paulista, 1000 ou Online"
                           {...field}
-                          value={formatLocalDatetime(
-                            field.value as Date | undefined,
-                          )}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="locationUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Link do Google Maps (Opcional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="https://maps.app.goo.gl/..."
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Ajuda os teus participantes a chegarem ao evento.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="imageUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Imagem de Capa (URL Opcional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="https://exemplo.com/imagem.jpg"
+                          {...field}
                         />
                       </FormControl>
                       <FormMessage />
@@ -220,7 +273,7 @@ export default function NewEventPage() {
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? "A guardar..." : "Criar Evento"}
+                  {isPending ? "A criar..." : "Criar Evento"}
                 </Button>
               </div>
             </form>

@@ -1,115 +1,231 @@
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { notFound, redirect } from "next/navigation";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  Calendar,
+  MapPin,
+  Users,
+  Ticket,
+  TrendingUp,
+  ArrowUpRight,
+  Settings,
+} from "lucide-react";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Ticket, Users, DollarSign, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+
+interface EventOverviewPageProps {
+  params: Promise<{ eventId: string }>;
+}
 
 export default async function EventOverviewPage({
   params,
-}: {
-  params: Promise<{ eventId: string }>;
-}) {
-  // Desempacotamos o eventId (tal como fizemos no layout e nos tickets)
+}: EventOverviewPageProps) {
   const { eventId } = await params;
+  const session = await auth();
 
-  // Vamos à base de dados procurar os lotes (ticket tiers) deste evento
-  const ticketTiers = await prisma.ticketTier.findMany({
-    where: { eventId },
+  if (!session?.user?.id) {
+    redirect("/login");
+  }
+
+  // 1. Procuramos o evento e garantimos que pertence ao organizador
+  const event = await prisma.event.findUnique({
+    where: {
+      id: eventId,
+      organizerId: session.user.id,
+    },
+    include: {
+      _count: {
+        select: { attendees: true },
+      },
+    },
   });
 
-  // Verificamos se existem lotes e somamos a capacidade total de todos eles
-  const hasTickets = ticketTiers.length > 0;
-  const totalCapacity = ticketTiers.reduce(
-    (acc, tier) => acc + tier.capacity,
-    0,
-  );
+  if (!event) {
+    notFound();
+  }
+
+  // 2. Corrigido: Procuramos os tipos de ingressos (ticketTypes) em vez de ticketTiers
+  const ticketTypes = await prisma.ticketType.findMany({
+    where: { eventId },
+    orderBy: { price: "asc" },
+  });
+
+  // 3. Calculamos a receita bruta deste evento específico (Pedidos Pagos)
+  const revenueResult = await prisma.order.aggregate({
+    _sum: {
+      totalAmount: true,
+    },
+    where: {
+      eventId,
+      status: "PAID",
+    },
+  });
+
+  const totalRevenue = revenueResult._sum.totalAmount || 0;
 
   return (
-    <div className="space-y-6">
-      {/* KPIs específicos deste evento */}
+    <div className="space-y-8">
+      {/* Cabeçalho do Evento */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-3xl font-bold tracking-tight">{event.title}</h1>
+            <Badge variant={event.status === "DRAFT" ? "secondary" : "default"}>
+              {event.status === "DRAFT" ? "Rascunho" : "Publicado"}
+            </Badge>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <Calendar className="h-4 w-4" />
+              {format(new Date(event.date), "dd 'de' MMMM, yyyy 'às' HH:mm", {
+                locale: ptBR,
+              })}
+            </div>
+            <div className="flex items-center gap-1">
+              <MapPin className="h-4 w-4" />
+              {event.location}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/${event.slug}`} target="_blank">
+              Ver Página Pública
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/events/${eventId}/settings`}>
+              <Settings className="h-4 w-4 mr-2" />
+              Configurações
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* Grid de Estatísticas Rápidas */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card shadow-sm>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Receita do Evento
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Receita Bruta</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">R$ 0,00</div>
-            <p className="text-xs text-muted-foreground">
-              Nenhuma venda registada
-            </p>
+            <div className="text-2xl font-bold">
+              {new Intl.NumberFormat("pt-BR", {
+                style: "currency",
+                currency: "BRL",
+              }).format(totalRevenue)}
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card shadow-sm>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Bilhetes Vendidos
-            </CardTitle>
-            <Ticket className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            {/* Agora a capacidade é dinâmica e real da base de dados! */}
-            <p className="text-xs text-muted-foreground">
-              De {totalCapacity} disponíveis
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Visualizações da Página
+              Total de Inscritos
             </CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground">
-              Página ainda não publicada
-            </p>
+            <div className="text-2xl font-bold">{event._count.attendees}</div>
+          </CardContent>
+        </Card>
+
+        <Card shadow-sm>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Lotes Ativos</CardTitle>
+            <Ticket className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{ticketTypes.length}</div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Alerta Condicional: Mostra aviso se NÃO houver lotes, ou sucesso se houver */}
-      {!hasTickets ? (
-        <Card className="border-dashed bg-muted/30">
-          <CardContent className="flex flex-col items-center justify-center h-48 text-center space-y-4 pt-6">
-            <div className="rounded-full bg-primary/10 p-3">
-              <Ticket className="h-8 w-8 text-primary" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-lg">
-                Nenhum lote de bilhetes configurado
-              </h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1">
-                Para começares a vender, precisas de criar pelo menos um lote
-                (ex: Entrada VIP, 1º Lote Pista) no separador &quot;Lotes e
-                Bilhetes&quot;.
-              </p>
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
+        {/* Lotes / Tipos de Ingressos */}
+        <Card className="col-span-4" shadow-sm>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Ingressos e Lotes</CardTitle>
+            <Button variant="ghost" size="sm" asChild>
+              <Link href={`/events/${eventId}/tickets`}>
+                Ver detalhes
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {ticketTypes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhum lote criado para este evento.
+                </p>
+              ) : (
+                ticketTypes.map((ticket) => (
+                  <div
+                    key={ticket.id}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                  >
+                    <div>
+                      <p className="font-medium">{ticket.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {ticket.description || "Sem descrição"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-bold">
+                        {ticket.price === 0
+                          ? "Grátis"
+                          : new Intl.NumberFormat("pt-BR", {
+                              style: "currency",
+                              currency: "BRL",
+                            }).format(ticket.price)}
+                      </p>
+                      <p className="text-[10px] uppercase text-muted-foreground">
+                        Capacidade: {ticket.capacity}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </CardContent>
         </Card>
-      ) : (
-        <Card className="bg-primary/5 border-primary/20">
-          <CardContent className="flex items-center gap-4 py-6">
-            <div className="rounded-full bg-primary/20 p-3 shrink-0">
-              <CheckCircle2 className="h-6 w-6 text-primary" />
+
+        {/* Informações de Localização e Descrição Curta */}
+        <Card className="col-span-3" shadow-sm>
+          <CardHeader>
+            <CardTitle>Sobre o Evento</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-sm text-muted-foreground line-clamp-6">
+              {event.description || "Nenhuma descrição fornecida."}
             </div>
-            <div>
-              <h3 className="font-semibold text-lg text-primary">
-                Pronto para vender!
-              </h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Já tens lotes configurados. O teu evento tem uma capacidade
-                total de <strong>{totalCapacity} lugares</strong>.
-              </p>
-            </div>
+
+            {event.locationUrl && (
+              <div className="pt-4 border-t">
+                <p className="text-sm font-medium mb-2">Localização no Mapa:</p>
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <a
+                    href={event.locationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MapPin className="h-4 w-4 mr-2" />
+                    Abrir no Google Maps
+                  </a>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
-      )}
+      </div>
     </div>
   );
 }

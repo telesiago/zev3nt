@@ -43,7 +43,7 @@ export default async function HomePage({
       },
     },
     orderBy: {
-      startDate: "asc", // Mostra os eventos mais próximos primeiro
+      date: "asc", // Mostra os eventos mais próximos primeiro (campo atualizado)
     },
   });
 
@@ -138,74 +138,70 @@ export default async function HomePage({
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {events.map((event) => (
-              <Link key={event.id} href={`/${event.slug}`} className="group">
-                <Card className="h-full flex flex-col overflow-hidden transition-all hover:shadow-md hover:border-primary/50">
-                  {/* Capa do Evento (Agora dinâmica!) */}
-                  <div className="h-40 bg-muted relative flex items-center justify-center overflow-hidden">
-                    {event.coverImageUrl ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={event.coverImageUrl}
-                        alt={event.title}
-                        className="object-cover w-full h-full z-0 transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <span className="text-muted-foreground text-sm z-10">
-                        Sem capa
-                      </span>
-                    )}
-                    <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors z-0" />
-                    <Badge
-                      className="absolute top-3 right-3 z-10 shadow-sm"
-                      variant="secondary"
-                    >
-                      {event.format === "IN_PERSON"
-                        ? "Presencial"
-                        : event.format === "ONLINE"
-                          ? "Online"
-                          : "Híbrido"}
-                    </Badge>
-                  </div>
+            {events.map((event) => {
+              // Derivamos se é online com base no texto da localização (campo format removido do DB)
+              const isOnline = event.location?.toLowerCase().includes("online");
 
-                  <CardHeader className="flex-1 pb-3 z-10 bg-card">
-                    <CardTitle className="line-clamp-2 text-lg group-hover:text-primary transition-colors">
-                      {event.title}
-                    </CardTitle>
-                    <CardDescription className="flex flex-col gap-2 pt-2">
-                      <div className="flex items-center gap-2 text-foreground/80 font-medium">
-                        <Calendar className="h-4 w-4 text-primary" />
-                        {format(
-                          new Date(event.startDate),
-                          "dd 'de' MMM, yyyy",
-                          { locale: ptBR },
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        {event.format === "ONLINE" ? (
-                          <Video className="h-4 w-4" />
-                        ) : (
-                          <MapPin className="h-4 w-4" />
-                        )}
-                        <span className="line-clamp-1">
-                          {event.format === "ONLINE"
-                            ? "Evento Online"
-                            : (event.locationDetails as { address?: string })
-                                ?.address || "Local a definir"}
+              return (
+                <Link key={event.id} href={`/${event.slug}`} className="group">
+                  <Card className="h-full flex flex-col overflow-hidden transition-all hover:shadow-md hover:border-primary/50">
+                    {/* Capa do Evento (Campo imageUrl atualizado) */}
+                    <div className="h-40 bg-muted relative flex items-center justify-center overflow-hidden">
+                      {event.imageUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={event.imageUrl}
+                          alt={event.title}
+                          className="object-cover w-full h-full z-0 transition-transform duration-500 group-hover:scale-105"
+                        />
+                      ) : (
+                        <span className="text-muted-foreground text-sm z-10">
+                          Sem capa
                         </span>
-                      </div>
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardFooter className="pt-0 pb-4 z-10 bg-card">
-                    <div className="flex items-center text-sm font-semibold text-primary w-full justify-between">
-                      Ver detalhes
-                      <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      )}
+                      <div className="absolute inset-0 bg-black/5 group-hover:bg-transparent transition-colors z-0" />
+                      <Badge
+                        className="absolute top-3 right-3 z-10 shadow-sm"
+                        variant="secondary"
+                      >
+                        {event.category || (isOnline ? "Online" : "Presencial")}
+                      </Badge>
                     </div>
-                  </CardFooter>
-                </Card>
-              </Link>
-            ))}
+
+                    <CardHeader className="flex-1 pb-3 z-10 bg-card">
+                      <CardTitle className="line-clamp-2 text-lg group-hover:text-primary transition-colors">
+                        {event.title}
+                      </CardTitle>
+                      <CardDescription className="flex flex-col gap-2 pt-2">
+                        <div className="flex items-center gap-2 text-foreground/80 font-medium">
+                          <Calendar className="h-4 w-4 text-primary" />
+                          {format(new Date(event.date), "dd 'de' MMM, yyyy", {
+                            locale: ptBR,
+                          })}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          {isOnline ? (
+                            <Video className="h-4 w-4" />
+                          ) : (
+                            <MapPin className="h-4 w-4" />
+                          )}
+                          <span className="line-clamp-1">
+                            {event.location || "Local a definir"}
+                          </span>
+                        </div>
+                      </CardDescription>
+                    </CardHeader>
+
+                    <CardFooter className="pt-0 pb-4 z-10 bg-card">
+                      <div className="flex items-center text-sm font-semibold text-primary w-full justify-between">
+                        Ver detalhes
+                        <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                      </div>
+                    </CardFooter>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>
