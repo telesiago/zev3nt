@@ -13,49 +13,48 @@ export async function validateTicket(qrCodeToken: string, eventId: string) {
 
   try {
     // Normaliza o token recebido (remove espaços e passa a minúsculas)
-    // Assim, se digitares "EE61AFE0", ele transforma em "ee61afe0"
     const searchToken = qrCodeToken.trim().toLowerCase();
 
-    // 2. Procurar o bilhete na base de dados
-    // Trocámos o findUnique pelo findFirst e usámos o "startsWith".
-    // Agora o sistema encontra o bilhete tanto pelo QR Code completo quanto pelo ID curto digitado manualmente!
-    const ticket = await prisma.ticket.findFirst({
+    // 2. Procurar o bilhete (agora Attendee) na base de dados
+    const attendee = await prisma.attendee.findFirst({
       where: {
-        qrCodeToken: {
+        qrCode: {
           startsWith: searchToken,
         },
       },
       include: {
         order: true,
-        ticketTier: true,
+        ticketType: true, // Atualizado de ticketTier para ticketType
       },
     });
 
     // 3. Validações de Segurança Críticas
-    if (!ticket) {
+    if (!attendee) {
       return {
         success: false,
         message: "❌ Bilhete inválido ou não encontrado.",
       };
     }
 
-    if (ticket.order.eventId !== eventId) {
+    // O novo schema liga o Attendee diretamente ao Evento, o que facilita a validação
+    if (attendee.eventId !== eventId) {
       return {
         success: false,
         message: "❌ Este bilhete pertence a OUTRO evento!",
       };
     }
 
-    if (ticket.order.status !== "PAID") {
+    if (attendee.order.status !== "PAID") {
       return {
         success: false,
         message: "❌ O pagamento deste bilhete ainda não foi confirmado.",
       };
     }
 
-    if (ticket.checkInStatus) {
-      const time = ticket.checkInTime
-        ? new Date(ticket.checkInTime).toLocaleTimeString("pt-BR")
+    // Atualizado de checkInStatus para isCheckedIn
+    if (attendee.isCheckedIn) {
+      const time = attendee.checkInTime
+        ? new Date(attendee.checkInTime).toLocaleTimeString("pt-BR")
         : "hora desconhecida";
       return {
         success: false,
@@ -64,22 +63,22 @@ export async function validateTicket(qrCodeToken: string, eventId: string) {
     }
 
     // 4. Tudo Certo! Autorizar a entrada e atualizar o estado do bilhete
-    await prisma.ticket.update({
-      where: { id: ticket.id },
+    await prisma.attendee.update({
+      where: { id: attendee.id },
       data: {
-        checkInStatus: true,
+        isCheckedIn: true,
         checkInTime: new Date(),
       },
     });
 
-    // 5. Limpar a cache para que a Tabela de Inscritos (Passo 2) se atualize automaticamente
+    // 5. Limpar a cache para que a Tabela de Inscritos se atualize automaticamente
     revalidatePath(`/events/${eventId}/attendees`);
 
     return {
       success: true,
       message: "✅ Check-in realizado com sucesso!",
-      attendeeName: ticket.attendeeName,
-      ticketTier: ticket.ticketTier.name,
+      attendeeName: attendee.name,
+      ticketTier: attendee.ticketType.name,
     };
   } catch (error) {
     console.error("Erro ao validar bilhete:", error);

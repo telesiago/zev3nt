@@ -12,14 +12,13 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, CheckCircle2, QrCode, UserCheck } from "lucide-react";
+import { AlertCircle, CheckCircle2, UserCheck } from "lucide-react";
 
 export default function CheckinPage({
   params,
 }: {
   params: Promise<{ eventId: string }>;
 }) {
-  // O SEGREDO DO NEXT.JS 15: Usamos React.use() para desempacotar a Promise no Client Component
   const { eventId } = use(params);
 
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
@@ -27,19 +26,13 @@ export default function CheckinPage({
   const [manualToken, setManualToken] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  // Memória para evitar que o scanner leia o mesmo QR Code repetidamente
   const lastScannedToken = useRef<string | null>(null);
   const scanTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  // Função que processa a validação
   const processCheckIn = (token: string) => {
-    // Se o sistema estiver ocupado a validar, ou se já estiver a mostrar uma mensagem, ignora
     if (isPending || status !== "idle") return;
-
-    // Bloqueia a leitura do EXATO mesmo token nos próximos 4 segundos (resolve o bug da câmara rápida)
     if (lastScannedToken.current === token) return;
 
-    // Regista na memória e limpa após 4 segundos
     lastScannedToken.current = token;
     if (scanTimeout.current) clearTimeout(scanTimeout.current);
     scanTimeout.current = setTimeout(() => {
@@ -51,7 +44,6 @@ export default function CheckinPage({
         setStatus(res.success ? "success" : "error");
         setMessage(res.message);
 
-        // Oculta a mensagem de sucesso ou erro ao fim de 3 segundos
         setTimeout(() => {
           setStatus("idle");
           setMessage("");
@@ -78,7 +70,6 @@ export default function CheckinPage({
       </div>
 
       <Card className="overflow-hidden relative">
-        {/* Camada de Bloqueio (Quando está a mostrar sucesso ou erro) */}
         {status !== "idle" && (
           <div className="absolute inset-0 z-10 bg-background/95 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center animate-in fade-in zoom-in duration-200">
             {status === "success" ? (
@@ -104,7 +95,6 @@ export default function CheckinPage({
             }}
             formats={["qr_code"]}
           />
-          {/* Mira visual */}
           <div className="absolute inset-0 border-[3px] border-primary/50 m-12 rounded-xl pointer-events-none" />
         </div>
       </Card>
