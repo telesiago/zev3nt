@@ -1,10 +1,13 @@
 "use client";
+
+import { useEffect } from "react";
 import { useFormContext } from "react-hook-form";
 import { ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -13,21 +16,33 @@ import {
 import { Input } from "@/components/ui/input";
 import { type EventSchema } from "@/schemas/event";
 
-// Função que converte link do Drive em link direto de imagem
-function getDirectImageUrl(url: string | undefined | null): string {
-  if (!url) return "";
-  const driveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
-  const match = url.match(driveRegex);
-  if (match && match[1]) {
-    return `https://lh3.googleusercontent.com/d/${match[1]}`;
-  }
-  return url;
-}
-
 export function EventImageSection() {
-  const { control, watch } = useFormContext<EventSchema>();
+  // Adicionamos o 'setValue' para atualizar o campo automaticamente
+  const { control, watch, setValue } = useFormContext<EventSchema>();
   const watchImageUrl = watch("imageUrl");
-  const previewUrl = getDirectImageUrl(watchImageUrl);
+
+  useEffect(() => {
+    if (watchImageUrl) {
+      // Regex para capturar o ID do Google Drive
+      const driveRegex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
+      const match = watchImageUrl.match(driveRegex);
+
+      if (match && match[1]) {
+        const fileId = match[1];
+        // Geramos o link direto oficial em HTTPS
+        const directUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+
+        // Só atualizamos se o link atual for diferente do link direto para evitar loops
+        if (watchImageUrl !== directUrl) {
+          setValue("imageUrl", directUrl, {
+            shouldValidate: true,
+            shouldDirty: true,
+          });
+          toast.success("Link do Google Drive convertido para link direto!");
+        }
+      }
+    }
+  }, [watchImageUrl, setValue]);
 
   return (
     <Card shadow-sm className="h-full">
@@ -46,26 +61,34 @@ export function EventImageSection() {
               <FormControl>
                 <Input
                   {...field}
-                  placeholder="[https://drive.google.com/file/d/](https://drive.google.com/file/d/)..."
+                  placeholder="Cole o link do Google Drive aqui..."
                   value={field.value || ""}
                 />
               </FormControl>
+              <FormDescription className="text-xs">
+                Links do Google Drive são convertidos automaticamente para
+                exibição.
+              </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
+
         <div className="aspect-video rounded-xl border-2 border-dashed bg-muted overflow-hidden flex items-center justify-center mt-4">
-          {previewUrl ? (
+          {watchImageUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={previewUrl}
+              src={watchImageUrl}
               className="w-full h-full object-cover"
               alt="Preview da Capa"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = "";
-                toast.error(
-                  "Não foi possível carregar o preview. Verifique se a imagem é pública ou um link válido.",
-                );
+                // O toast de erro só aparece se o link final não carregar
+                if (watchImageUrl.includes("drive.google.com")) {
+                  toast.error(
+                    "Erro ao carregar imagem. Verifique as permissões de compartilhamento no Drive.",
+                  );
+                }
               }}
             />
           ) : (
